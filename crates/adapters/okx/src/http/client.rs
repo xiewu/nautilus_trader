@@ -118,6 +118,11 @@ pub struct OKXResponse<T> {
     pub data: Vec<T>,
 }
 
+/// Provides a HTTP client for connecting to the [OKX](https://okx.com) REST API.
+///
+/// This client wraps the underlying [`HttpClient`] to handle functionality
+/// specific to OKX, such as request signing (for authenticated endpoints),
+/// forming request URLs, and deserializing responses into specific data models.
 pub struct OKXHttpInnerClient {
     base_url: String,
     client: HttpClient,
@@ -963,12 +968,14 @@ impl OKXHttpClient {
         // Add timeout to prevent hanging requests
         let timeout_duration = tokio::time::Duration::from_secs(60); // 60 second timeout
 
-        tokio::time::timeout(timeout_duration, async {
+        let bars = tokio::time::timeout(timeout_duration, async {
             self.request_bars_internal(bar_type, start, end, limit)
                 .await
         })
         .await
-        .map_err(|_| anyhow::anyhow!("Request timed out after 60 seconds"))?
+        .map_err(|_| anyhow::anyhow!("Request timed out after 60 seconds"))??;
+
+        Ok(bars)
     }
 
     // OKX pagination – comprehensive fixed version
@@ -1078,16 +1085,18 @@ impl OKXHttpClient {
 
             if let Some(c) = cursor {
                 match mode {
+                    /* ------------------------------------------------------
+                     * FIX:  use `after_ms` for forward-moving modes
+                     * ----------------------------------------------------*/
                     Mode::Forward | Mode::Latest | Mode::Range => {
-                        let before_ms = c.timestamp_millis(); // **right flag**
-                        p.before_ms(before_ms);
+                        let after_ms = c.timestamp_millis();
+                        p.after_ms(after_ms); // <-- correct flag
                     }
-
                     Mode::Backward => {
-                        let after_ms = c.timestamp_millis(); // **right flag**
-                        p.after_ms(after_ms);
+                        let before_ms = c.timestamp_millis();
+                        p.before_ms(before_ms); // <-- correct flag
                     }
-                };
+                }
             } else {
                 trace!("No cursor set for mode={:?}", mode);
             }

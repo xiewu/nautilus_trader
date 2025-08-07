@@ -22,7 +22,8 @@ import asyncio
 import pandas as pd
 
 from nautilus_trader.adapters.okx.factories import get_cached_okx_http_client
-from nautilus_trader.common.component import Logger, init_logging
+from nautilus_trader.common.component import Logger
+from nautilus_trader.common.component import init_logging
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.core import nautilus_pyo3
 
@@ -35,7 +36,9 @@ TZ_UTC = "UTC"  # simpler literal
 # Helpers
 # ----------------------------------------------------------------------
 def utc_now() -> pd.Timestamp:
-    """Timezone-aware ‘now’ helper."""
+    """
+    Timezone-aware `now` helper.
+    """
     return pd.Timestamp.now(tz=TZ_UTC)
 
 
@@ -73,11 +76,8 @@ async def paginate_bars(
             if remaining <= 0:
                 break
 
-        # Advance cursor by 1 ms (matches the adapter’s millisecond resolution)
-        cursor = (
-            pd.Timestamp(batch[-1].ts_event, unit="ns", tz=TZ_UTC)
-            + pd.Timedelta("1ms")
-        )
+        # Advance cursor by 1 ms (matches the adapter's millisecond resolution)
+        cursor = pd.Timestamp(batch[-1].ts_event, unit="ns", tz=TZ_UTC) + pd.Timedelta("1ms")
         if end is not None and cursor >= end:
             break
 
@@ -89,8 +89,10 @@ async def paginate_bars(
 # ----------------------------------------------------------------------
 # Validation helpers
 # ----------------------------------------------------------------------
-def assert_chronological(bars: list):
-    """Ensure bars are strictly chronological and highlight anomalies."""
+def assert_chronological(bars: list) -> None:
+    """
+    Ensure bars are strictly chronological and highlight anomalies.
+    """
     if not bars:
         return
 
@@ -101,16 +103,16 @@ def assert_chronological(bars: list):
         # Locate the first offending pair
         for i in range(1, len(ts)):
             if ts[i] <= ts[i - 1]:
-                print(f"❌ Chronological violation at index {i}:")
-                print(f"   Bar {i-1}: {pd.Timestamp(ts[i-1], tz='UTC')}")
+                print(f"Chronological violation at index {i}:")
+                print(f"   Bar {i - 1}: {pd.Timestamp(ts[i - 1], tz='UTC')}")
                 print(f"   Bar {i}:   {pd.Timestamp(ts[i], tz='UTC')}")
-                print(f"   Difference: {ts[i] - ts[i-1]} ns")
+                print(f"   Difference: {ts[i] - ts[i - 1]} ns")
                 break
 
         # Duplicates?
         dup_idx = series.duplicated()
         if dup_idx.any():
-            print(f"⚠️  Found {dup_idx.sum()} duplicate timestamp(s)")
+            print(f"Found {dup_idx.sum()} duplicate timestamp(s)")
 
         raise AssertionError("Bars are not strictly ascending")
 
@@ -120,15 +122,15 @@ def assert_chronological(bars: list):
         expected_ns = 60 * 1_000_000_000  # 60 s
         odd = gaps[(gaps < expected_ns * 0.8) | (gaps > expected_ns * 1.5)]
         if not odd.empty:
-            print(f"⚠️  Detected {len(odd)} gap(s) outside 60 s ±20 % window")
+            print(f"Detected {len(odd)} gap(s) outside 60 s ±20 % window")
 
-    print(f"✅ Chronological check passed for {len(bars)} bar(s)")
+    print(f"Chronological check passed for {len(bars)} bar(s)")
 
 
 # ----------------------------------------------------------------------
 # Test suites
 # ----------------------------------------------------------------------
-async def quick_tests(http_client, bar_type: nautilus_pyo3.BarType, logger: Logger):
+async def quick_tests(http_client, bar_type: nautilus_pyo3.BarType, logger: Logger) -> None:
     logger.info("\n=== QUICK TESTS ===")
 
     # Latest 5
@@ -145,7 +147,7 @@ async def quick_tests(http_client, bar_type: nautilus_pyo3.BarType, logger: Logg
     assert_chronological(fixed)
 
 
-async def limit_tests(http_client, bar_type: nautilus_pyo3.BarType, logger: Logger):
+async def limit_tests(http_client, bar_type: nautilus_pyo3.BarType, logger: Logger) -> None:
     logger.info("\n=== LIMIT BEHAVIOR TESTS ===")
     tgt_start = utc_now() - pd.Timedelta(hours=8)
 
@@ -163,12 +165,18 @@ async def limit_tests(http_client, bar_type: nautilus_pyo3.BarType, logger: Logg
         assert_chronological(bars)
 
 
-async def edge_case_tests(http_client, bar_type: nautilus_pyo3.BarType, logger: Logger):
+async def edge_case_tests(http_client, bar_type: nautilus_pyo3.BarType, logger: Logger) -> None:
     logger.info("\n=== EDGE-CASE TESTS ===")
 
     # 300-bar manual pagination
     start = utc_now() - pd.Timedelta(hours=6)
-    page = await paginate_bars(http_client, bar_type=bar_type, start=start, end=None, total_limit=300)
+    page = await paginate_bars(
+        http_client,
+        bar_type=bar_type,
+        start=start,
+        end=None,
+        total_limit=300,
+    )
     logger.info(f"[Edge-1] manual pagination 300 → {len(page)}")
     assert len(page) == 300
     assert_chronological(page)
@@ -177,7 +185,12 @@ async def edge_case_tests(http_client, bar_type: nautilus_pyo3.BarType, logger: 
     fut_start = utc_now() + pd.Timedelta(days=1)
     fut_end = fut_start + pd.Timedelta(minutes=10)
     try:
-        fut = await http_client.request_bars(bar_type=bar_type, start=fut_start, end=fut_end, limit=5)
+        fut = await http_client.request_bars(
+            bar_type=bar_type,
+            start=fut_start,
+            end=fut_end,
+            limit=5,
+        )
         logger.info(f"[Edge-2] future window returned {len(fut)}")
         assert not fut
     except ValueError:
@@ -203,10 +216,10 @@ async def edge_case_tests(http_client, bar_type: nautilus_pyo3.BarType, logger: 
     except Exception:
         logger.info("[Edge-5] invalid instrument correctly raised")
 
-    logger.info("✅ Edge-case suite passed")
+    logger.info("Edge-case suite passed")
 
 
-async def pagination_demo(http_client, bar_type: nautilus_pyo3.BarType, logger: Logger):
+async def pagination_demo(http_client, bar_type: nautilus_pyo3.BarType, logger: Logger) -> None:
     logger.info("\n=== PAGINATION FIX DEMONSTRATION ===")
 
     # 173-bar request (2 pages)
@@ -223,13 +236,13 @@ async def pagination_demo(http_client, bar_type: nautilus_pyo3.BarType, logger: 
     assert len(demo_large) == 300
     assert_chronological(demo_large)
 
-    logger.info("✅ Pagination demo finished – cursors advanced monotonically")
+    logger.info("Pagination demo finished - cursors advanced monotonically")  # ← fixed hyphen
 
 
 # ----------------------------------------------------------------------
 # Main entry
 # ----------------------------------------------------------------------
-async def main(args: argparse.Namespace):
+async def main(args: argparse.Namespace) -> None:
     nautilus_pyo3.init_tracing()
     _guard = init_logging(level_stdout=LogLevel.TRACE)
     logger = Logger("okx-sandbox")
@@ -259,7 +272,7 @@ async def main(args: argparse.Namespace):
     if args.edge or not any(vars(args).values()):
         await edge_case_tests(http_client, bar_type, logger)
 
-    logger.info("\n🎉 All requested test suites passed")
+    logger.info("\nAll requested test suites passed")
 
 
 if __name__ == "__main__":
